@@ -116,6 +116,30 @@ resource "aws_instance" "pipe-timer-backend" {
     volume_type = "gp2"
   }
 
+  provisioner "remote-exec" {
+    inline = [
+      "sudo apt update",
+      "sudo apt upgrade -y",
+      "sudo apt install -y docker.io",
+      "sudo systemctl enable docker",
+      "sudo systemctl start docker",
+      "sudo groupadd -f docker",
+      "sudo usermod -aG docker $USER",
+      "sudo curl -L https://github.com/docker/compose/releases/download/1.29.2/docker-compose-`uname -s`-`uname -m` -o /usr/local/bin/docker-compose",
+      "sudo chmod +x /usr/local/bin/docker-compose",
+    ]
+    connection {
+      type        = "ssh"
+      user        = "ubuntu"
+      private_key = file("../pipe-timer")
+      host        = aws_instance.pipe-timer-backend.public_ip
+    }
+  }
+
+  provisioner "local-exec" {
+    command = "aws ec2 reboot-instances --instance-ids ${self.id} --region ap-northeast-2"
+  }
+
   tags = {
     Name = "pipe-timer-api"
   }
