@@ -8,9 +8,27 @@ terraform {
   required_version = ">= 1.2.0"
 }
 
-
 provider "aws" {
   region = var.region
+}
+
+resource "null_resource" "build-docker" {
+  provisioner "local-exec" {
+    command     = "./shell-scripts/login-docker-registry.sh ${var.registry_url} ${var.registry_id} ${var.registry_password}"
+    working_dir = path.module
+    interpreter = ["/bin/bash", "-c"]
+  }
+
+  provisioner "local-exec" {
+    command = templatefile("./shell-scripts/build-push-registry.sh",
+      {
+        "REGISTRY_URL" = var.registry_url
+        "ENV"          = "staging"
+        "PATH"         = "../../../pipe-timer-backend"
+      })
+    working_dir = path.module
+    interpreter = ["/bin/bash", "-c"]
+  }
 }
 
 data "http" "ip" {
@@ -84,13 +102,6 @@ resource "aws_security_group" "sg_pipe_timer_backend" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  ingress {
-    from_port   = 3306
-    to_port     = 3306
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
   egress {
     from_port   = 0
     to_port     = 0
@@ -100,7 +111,7 @@ resource "aws_security_group" "sg_pipe_timer_backend" {
 }
 
 data "template_file" "user_data" {
-  template = file("../scripts/add-ssh-web-app.yaml")
+  template = file("${path.module}/../../scripts/add-ssh-web-app.yaml")
 }
 
 resource "aws_instance" "pipe-timer-backend" {
@@ -116,28 +127,58 @@ resource "aws_instance" "pipe-timer-backend" {
     volume_type = "gp2"
   }
 
-  provisioner "remote-exec" {
-    inline = [
-      "sudo apt update",
-      "sudo apt upgrade -y",
-      "sudo apt install -y docker.io",
-      "sudo systemctl enable docker",
-      "sudo systemctl start docker",
-      "sudo groupadd -f docker",
-      "sudo usermod -aG docker $USER",
-      "sudo curl -L https://github.com/docker/compose/releases/download/1.29.2/docker-compose-`uname -s`-`uname -m` -o /usr/local/bin/docker-compose",
-      "sudo chmod +x /usr/local/bin/docker-compose",
-    ]
-    connection {
-      type        = "ssh"
-      user        = "ubuntu"
-      private_key = file("../pipe-timer")
-      host        = aws_instance.pipe-timer-backend.public_ip
-    }
+  connection {
+    type        = "ssh"
+    user        = "ubuntu"
+    private_key = file("./backend-priv.pem")
+    host        = aws_instance.pipe-timer-backend.public_ip
   }
 
-  provisioner "local-exec" {
-    command = "aws ec2 reboot-instances --instance-ids ${self.id} --region ap-northeast-2"
+  provisioner "remote-exec" {
+    inline = [
+      "mkdir -p ${var.cicd_path}",
+      "chmod 755 ${var.cicd_path}",
+    ]
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/shell-scripts"
+    destination = var.cicd_path
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/../../certs"
+    destination = var.cicd_path
+  }
+
+
+  provisioner "file" {
+    source      = "${path.module}/../../../pipe-timer-backend/env"
+    destination = "${var.cicd_path}/env"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "chmod +x ${var.cicd_path}/shell-scripts/install-docker.sh",
+      "${var.cicd_path}/shell-scripts/install-docker.sh",
+    ]
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "chmod +x ${var.cicd_path}/shell-scripts/login-docker-registry.sh",
+      "${var.cicd_path}/shell-scripts/login-docker-registry.sh ${var.registry_url} ${var.registry_id} ${var.registry_password}",
+    ]
+  }
+
+
+  provisioner "remote-exec" {
+    inline = [
+      "docker pull ${var.registry_url}/pipe-timer-backend:staging",
+      "docker run -it -e NODE_ENV=staging --env-file ${var.cicd_path}/env/.staging.env -p 3000:3000 --name backend -v ${var.cicd_path}/certs:/certs:ro ${var.registry_url}/pipe-timer-backend:staging",
+      "docker images",
+      "docker ps -a",
+    ]
   }
 
   tags = {

@@ -16,3 +16,23 @@ variable "region" {
   description = "The region Terraform deploys your instance"
 }
 
+variable "registry_url" {
+  description = "The docker registry url"
+  type        = string
+}
+
+variable "registry_id" {
+  description = "The docker registry username"
+  type        = string
+}
+
+variable "registry_password" {
+  description = "The docker registry password"
+  type        = string
+}
+
+variable "cicd_path" {
+  description = "The cicd path"
+  type        = string
+}
+
