@@ -31,3 +31,8 @@ variable "registry_password" {
   type        = string
 }
 
+variable "cicd_path" {
+  description = "The cicd path"
+  type        = string
+}
+
