@@ -147,7 +147,7 @@ resource "aws_instance" "pipe-timer-backend" {
   }
 
   provisioner "file" {
-    source      = "${path.module}/../../certs"
+    source      = "${path.module}/../../../certs"
     destination = var.cicd_path
   }
 
