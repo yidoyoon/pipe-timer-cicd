@@ -36,3 +36,17 @@ variable "cicd_path" {
   type        = string
 }
 
+variable "mysql_db_name" {
+  description = "The mysql db name"
+  type        = string
+}
+
+variable "mysql_username" {
+  description = "The mysql username"
+  type        = string
+}
+
+variable "mysql_password" {
+  description = "The mysql password"
+  type        = string
+}
