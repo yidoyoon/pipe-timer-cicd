@@ -186,6 +186,20 @@ resource "aws_elasticache_cluster" "redis" {
   }
 }
 
-output "public_ip" {
-  value = aws_instance.pipe-timer-backend.public_ip
+# env 파일 갱신
+resource "null_resource" "update_env" {
+  provisioner "local-exec" {
+    command = templatefile("./shell-scripts/update-env.sh",
+      {
+        "MYSQL_HOST"     = aws_db_instance.mysql.address
+        "MYSQL_DB_NAME"  = var.mysql_db_name
+        "MYSQL_USERNAME" = var.mysql_username
+        "MYSQL_PASSWORD" = var.mysql_password
+        "REDIS_URL"      = "${aws_elasticache_cluster.redis.cache_nodes[0].address}:${aws_elasticache_cluster.redis.cache_nodes[0].port}"
+        "ENV_PATH"       = "${path.module}/../../../../pipe-timer-backend/env"
+        "ENV"            = "staging"
+      })
+    working_dir = path.module
+    interpreter = ["/bin/bash", "-c"]
+  }
 }
