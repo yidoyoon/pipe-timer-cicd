@@ -50,3 +50,13 @@ variable "mysql_password" {
   description = "The mysql password"
   type        = string
 }
+
+variable "cf_zone_id" {
+  description = "The cloudflare zone id"
+  type        = string
+}
+
+variable "cf_token" {
+  description = "The cloudflare api token"
+  type        = string
+}

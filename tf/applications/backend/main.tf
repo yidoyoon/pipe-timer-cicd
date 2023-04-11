@@ -4,14 +4,24 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 4.16"
     }
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "~> 3.0"
+    }
   }
+
   required_version = ">= 1.2.0"
+}
+
+provider "cloudflare" {
+  api_token = var.cf_token
 }
 
 provider "aws" {
   region = var.region
 }
 
+## Build
 resource "null_resource" "build-docker" {
   provisioner "local-exec" {
     command     = "./shell-scripts/login-docker-registry.sh ${var.registry_url} ${var.registry_id} ${var.registry_password}"
@@ -31,6 +41,7 @@ resource "null_resource" "build-docker" {
   }
 }
 
+# EC2 Essentials
 data "http" "ip" {
   url = "https://ifconfig.me/ip"
 }
@@ -46,39 +57,8 @@ data "aws_availability_zones" "available" {
   state = "available"
 }
 
-resource "aws_vpc" "vpc" {
-  cidr_block           = var.cidr_vpc
-  enable_dns_support   = true
-  enable_dns_hostnames = true
-}
-
-resource "aws_internet_gateway" "igw" {
-  vpc_id = aws_vpc.vpc.id
-}
-
-resource "aws_subnet" "subnet_public" {
-  vpc_id            = aws_vpc.vpc.id
-  cidr_block        = var.cidr_subnet
-  availability_zone = data.aws_availability_zones.available.names[0]
-}
-
-resource "aws_route_table" "rtb_public" {
-  vpc_id = aws_vpc.vpc.id
-
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.igw.id
-  }
-}
-
-resource "aws_route_table_association" "rta_subnet_public" {
-  subnet_id      = aws_subnet.subnet_public.id
-  route_table_id = aws_route_table.rtb_public.id
-}
-
 resource "aws_security_group" "sg_pipe_timer_backend" {
-  name   = "sg_pipe_timer_backend"
-  vpc_id = aws_vpc.vpc.id
+  name = "sg_pipe_timer_backend"
 
   # SSH access from the VPC
   ingress {
@@ -110,9 +90,6 @@ resource "aws_security_group" "sg_pipe_timer_backend" {
   }
 }
 
-data "template_file" "user_data" {
-  template = file("${path.module}/../../scripts/add-ssh-web-app.yaml")
-}
 
 # RDS(MySQL) security group 생성
 resource "aws_security_group" "mysql" {
@@ -202,4 +179,90 @@ resource "null_resource" "update_env" {
     working_dir = path.module
     interpreter = ["/bin/bash", "-c"]
   }
+}
+
+data "template_file" "user_data" {
+  template = file("${path.module}/../../scripts/add-ssh-web-app.yaml")
+}
+
+resource "aws_instance" "pipe-timer-backend" {
+  ami                         = data.aws_ami.ubuntu.id
+  instance_type               = "t2.micro"
+  vpc_security_group_ids      = [aws_security_group.sg_pipe_timer_backend.id]
+  associate_public_ip_address = true
+  user_data                   = data.template_file.user_data.rendered
+
+  root_block_device {
+    volume_size = 15
+    volume_type = "gp2"
+  }
+
+  connection {
+    type        = "ssh"
+    user        = "ubuntu"
+    private_key = file("./backend-priv.pem")
+    host        = aws_instance.pipe-timer-backend.public_ip
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "mkdir -p ${var.cicd_path}",
+      "chmod 755 ${var.cicd_path}",
+    ]
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/shell-scripts"
+    destination = var.cicd_path
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/../../../certs"
+    destination = var.cicd_path
+  }
+
+
+  provisioner "file" {
+    source      = "${path.module}/../../../../pipe-timer-backend/env"
+    destination = "${var.cicd_path}/env"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "chmod +x ${var.cicd_path}/shell-scripts/install-docker.sh",
+      "${var.cicd_path}/shell-scripts/install-docker.sh",
+    ]
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "chmod +x ${var.cicd_path}/shell-scripts/login-docker-registry.sh",
+      "${var.cicd_path}/shell-scripts/login-docker-registry.sh ${var.registry_url} ${var.registry_id} ${var.registry_password}",
+    ]
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "docker pull ${var.registry_url}/pipe-timer-backend:staging",
+      "docker run -itd -e NODE_ENV=staging --env-file ${var.cicd_path}/env/.staging.env -p 3000:3000 --name backend -v ${var.cicd_path}/certs:/certs:ro ${var.registry_url}/pipe-timer-backend:staging",
+      "docker ps -a",
+    ]
+  }
+
+  depends_on = [
+    aws_db_instance.mysql,
+    aws_elasticache_cluster.redis
+  ]
+
+  tags = {
+    Name = "pipe-timer-api"
+  }
+}
+
+# Add backend record to DNS
+resource "cloudflare_record" "pipetimer_com" {
+  zone_id = var.cf_zone_id
+  name    = "api.pipetimer.com"
+  value   = aws_instance.pipe-timer-backend.public_ip
+  type    = "A"
 }
