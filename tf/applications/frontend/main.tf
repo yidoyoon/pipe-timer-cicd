@@ -20,6 +20,7 @@ provider "cloudflare" {
 provider "aws" {
   region = var.region
 }
+
 resource "null_resource" "build-docker" {
   provisioner "local-exec" {
     command = "./shell-scripts/login-docker-registry.sh ${var.registry_url} ${var.registry_id} ${var.registry_password}"
@@ -52,12 +53,9 @@ data "aws_ami" "ubuntu" {
   }
 }
 
-data "aws_availability_zones" "available" {
-  state = "available"
-}
-
 resource "aws_security_group" "sg_pipe_timer_frontend" {
-  name = "sg_pipe_timer_frontend"
+  name   = "sg_pipe_timer_frontend"
+  vpc_id = data.terraform_remote_state.backend.outputs.vpc_id
 
   # SSH access from the VPC
   ingress {
@@ -86,9 +84,18 @@ data "template_file" "user_data" {
   template = file("${path.module}/../../scripts/add-ssh-web-app.yaml")
 }
 
+data "terraform_remote_state" "backend" {
+  backend = "local"
+
+  config = {
+    path = "../backend/terraform.tfstate"
+  }
+}
+
 resource "aws_instance" "pipe-timer-frontend" {
   ami                         = data.aws_ami.ubuntu.id
   instance_type               = "t2.micro"
+  subnet_id                   = data.terraform_remote_state.backend.outputs.subnet_1
   vpc_security_group_ids      = [aws_security_group.sg_pipe_timer_frontend.id]
   associate_public_ip_address = true
   user_data                   = data.template_file.user_data.rendered
@@ -101,7 +108,7 @@ resource "aws_instance" "pipe-timer-frontend" {
   connection {
     type        = "ssh"
     user        = "ubuntu"
-    private_key = file("./frontend-priv.pem")
+    private_key = file("../../scripts/ssh")
     host        = aws_instance.pipe-timer-frontend.public_ip
   }
 
@@ -124,6 +131,11 @@ resource "aws_instance" "pipe-timer-frontend" {
 
 
   provisioner "file" {
+    source      = "${path.module}/../../../../pipe-timer-front/templates/nginx.conf"
+    destination = "${var.cicd_path}/nginx.conf"
+  }
+
+  provisioner "file" {
     source      = "${path.module}/../../../../pipe-timer-front/env"
     destination = "${var.cicd_path}/env"
   }
@@ -135,23 +147,25 @@ resource "aws_instance" "pipe-timer-frontend" {
 
   provisioner "remote-exec" {
     inline = [
-      "chmod +x ${var.cicd_path}/shell-scripts/install-docker.sh",
+      "chmod -R +x ${var.cicd_path}/shell-scripts/*",
+    ]
+  }
+
+  provisioner "remote-exec" {
+    inline = [
       "${var.cicd_path}/shell-scripts/install-docker.sh",
     ]
   }
 
   provisioner "remote-exec" {
     inline = [
-      "chmod +x ${var.cicd_path}/shell-scripts/login-docker-registry.sh",
       "${var.cicd_path}/shell-scripts/login-docker-registry.sh ${var.registry_url} ${var.registry_id} ${var.registry_password}",
     ]
   }
 
   provisioner "remote-exec" {
     inline = [
-      "docker pull ${var.registry_url}/pipe-timer-frontend:staging",
-      "docker run -itd -e NODE_ENV=staging -e NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx --env-file ${var.cicd_path}/env/.staging.env -p 443:443 -p 80:80 -v ${var.cicd_path}/certs:/etc/nginx/certs/:ro -v ${var.cicd_path}/public:/public:ro --name frontend ${var.registry_url}/pipe-timer-frontend:staging",
-      "docker ps -a",
+      "${var.cicd_path}/shell-scripts/run-docker.sh ${var.registry_url} ${var.cicd_path} ${var.env}",
     ]
   }
 
@@ -164,6 +178,14 @@ resource "aws_instance" "pipe-timer-frontend" {
 resource "cloudflare_record" "pipetimer_com" {
   zone_id = var.cf_zone_id
   name    = "*.pipetimer.com"
+  value   = aws_instance.pipe-timer-frontend.public_ip
+  type    = "A"
+  proxied = true
+}
+
+resource "cloudflare_record" "root_pipetimer_com" {
+  zone_id = var.cf_zone_id
+  name    = "@"
   value   = aws_instance.pipe-timer-frontend.public_ip
   type    = "A"
   proxied = true
