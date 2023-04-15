@@ -34,7 +34,7 @@ resource "null_resource" "build-docker" {
       {
         "REGISTRY_URL" = var.registry_url
         "ENV"          = "staging"
-        "PATH"         = "../../../pipe-timer-backend"
+        "PATH"         = "../../../../pipe-timer-backend"
       })
     working_dir = path.module
     interpreter = ["/bin/bash", "-c"]
@@ -57,8 +57,50 @@ data "aws_availability_zones" "available" {
   state = "available"
 }
 
+## Networks
+#resource "aws_vpc" "vpc" {
+#  cidr_block           = var.cidr_vpc
+#  enable_dns_support   = true
+#  enable_dns_hostnames = true
+#}
+#
+#resource "aws_internet_gateway" "igw" {
+#  vpc_id = aws_vpc.vpc.id
+#}
+#
+#resource "aws_subnet" "public_1" {
+#  vpc_id            = aws_vpc.vpc.id
+#  cidr_block        = var.cidr_subnet_1
+#  availability_zone = data.aws_availability_zones.available.names[0]
+#}
+#
+#resource "aws_subnet" "public_2" {
+#  vpc_id            = aws_vpc.vpc.id
+#  cidr_block        = var.cidr_subnet_2
+#  availability_zone = data.aws_availability_zones.available.names[1]
+#}
+#
+#resource "aws_route_table" "rtb_public" {
+#  vpc_id = aws_vpc.vpc.id
+#
+#  route {
+#    cidr_block = "0.0.0.0/0"
+#    gateway_id = aws_internet_gateway.igw.id
+#  }
+#}
+#
+#resource "aws_route_table_association" "rta_subnet_public" {
+#  subnet_id      = aws_subnet.public_1.id
+#  route_table_id = aws_route_table.rtb_public.id
+#}
+
+module "staging_vpc" {
+  source = "../../modules/network/vpc"
+}
+
 resource "aws_security_group" "sg_pipe_timer_backend" {
-  name = "sg_pipe_timer_backend"
+  name   = "sg_pipe_timer_backend"
+  vpc_id = module.staging_vpc.vpc_id
 
   # SSH access from the VPC
   ingress {
@@ -66,13 +108,6 @@ resource "aws_security_group" "sg_pipe_timer_backend" {
     to_port     = 22
     protocol    = "tcp"
     cidr_blocks = ["${data.http.ip.response_body}/32"]
-  }
-
-  ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
   }
 
   ingress {
@@ -90,10 +125,10 @@ resource "aws_security_group" "sg_pipe_timer_backend" {
   }
 }
 
-
 # RDS(MySQL) security group 생성
 resource "aws_security_group" "mysql" {
   name_prefix = "pipe-timer"
+  vpc_id = module.staging_vpc.vpc_id
 
   ingress {
     from_port   = 3306
@@ -113,6 +148,7 @@ resource "aws_security_group" "mysql" {
 # Redis security group 생성
 resource "aws_security_group" "redis" {
   name_prefix = "pipe-timer"
+  vpc_id = module.staging_vpc.vpc_id
 
   ingress {
     from_port   = 6379
@@ -129,6 +165,11 @@ resource "aws_security_group" "redis" {
   }
 }
 
+resource "aws_db_subnet_group" "pipe-timer" {
+  name       = "pipe-timer"
+  subnet_ids = [module.staging_vpc.public_subnet_1_id, module.staging_vpc.public_subnet_2_id]
+}
+
 # RDS(MySQL)
 resource "aws_db_instance" "mysql" {
   db_name                = var.mysql_db_name
@@ -142,10 +183,16 @@ resource "aws_db_instance" "mysql" {
   skip_final_snapshot    = true
   vpc_security_group_ids = [aws_security_group.mysql.id]
   availability_zone      = data.aws_availability_zones.available.names[0]
+  db_subnet_group_name   = aws_db_subnet_group.pipe-timer.name
 
   tags = {
     Name = "pipe-timer-db"
   }
+}
+
+resource "aws_elasticache_subnet_group" "pipe-timer" {
+  name       = "redis"
+  subnet_ids = [module.staging_vpc.public_subnet_1_id, module.staging_vpc.public_subnet_2_id]
 }
 
 # Elasticache(Redis) 생성
@@ -157,6 +204,7 @@ resource "aws_elasticache_cluster" "redis" {
   port               = 6379
   security_group_ids = [aws_security_group.redis.id]
   availability_zone  = data.aws_availability_zones.available.names[0]
+  subnet_group_name  = aws_elasticache_subnet_group.pipe-timer.name
 
   tags = {
     Name = "pipe-redis"
@@ -188,6 +236,7 @@ data "template_file" "user_data" {
 resource "aws_instance" "pipe-timer-backend" {
   ami                         = data.aws_ami.ubuntu.id
   instance_type               = "t2.micro"
+  subnet_id                   = module.staging_vpc.public_subnet_1_id
   vpc_security_group_ids      = [aws_security_group.sg_pipe_timer_backend.id]
   associate_public_ip_address = true
   user_data                   = data.template_file.user_data.rendered
@@ -200,7 +249,7 @@ resource "aws_instance" "pipe-timer-backend" {
   connection {
     type        = "ssh"
     user        = "ubuntu"
-    private_key = file("./backend-priv.pem")
+    private_key = file("../../scripts/ssh")
     host        = aws_instance.pipe-timer-backend.public_ip
   }
 
@@ -221,7 +270,6 @@ resource "aws_instance" "pipe-timer-backend" {
     destination = var.cicd_path
   }
 
-
   provisioner "file" {
     source      = "${path.module}/../../../../pipe-timer-backend/env"
     destination = "${var.cicd_path}/env"
@@ -229,23 +277,25 @@ resource "aws_instance" "pipe-timer-backend" {
 
   provisioner "remote-exec" {
     inline = [
-      "chmod +x ${var.cicd_path}/shell-scripts/install-docker.sh",
+      "chmod -R +x ${var.cicd_path}/shell-scripts/*",
+    ]
+  }
+
+  provisioner "remote-exec" {
+    inline = [
       "${var.cicd_path}/shell-scripts/install-docker.sh",
     ]
   }
 
   provisioner "remote-exec" {
     inline = [
-      "chmod +x ${var.cicd_path}/shell-scripts/login-docker-registry.sh",
       "${var.cicd_path}/shell-scripts/login-docker-registry.sh ${var.registry_url} ${var.registry_id} ${var.registry_password}",
     ]
   }
 
   provisioner "remote-exec" {
     inline = [
-      "docker pull ${var.registry_url}/pipe-timer-backend:staging",
-      "docker run -itd -e NODE_ENV=staging --env-file ${var.cicd_path}/env/.staging.env -p 3000:3000 --name backend -v ${var.cicd_path}/certs:/certs:ro ${var.registry_url}/pipe-timer-backend:staging",
-      "docker ps -a",
+      "${var.cicd_path}/shell-scripts/run-docker.sh ${var.registry_url} ${var.cicd_path} ${var.env}",
     ]
   }
 
@@ -255,14 +305,16 @@ resource "aws_instance" "pipe-timer-backend" {
   ]
 
   tags = {
-    Name = "pipe-timer-api"
+    Name = "pipe-timer-backend"
   }
 }
 
 # Add backend record to DNS
-resource "cloudflare_record" "pipetimer_com" {
+resource "cloudflare_record" "api_pipetimer_com" {
   zone_id = var.cf_zone_id
   name    = "api.pipetimer.com"
   value   = aws_instance.pipe-timer-backend.public_ip
   type    = "A"
+  proxied = true
+
 }
