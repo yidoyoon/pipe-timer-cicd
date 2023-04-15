@@ -1,7 +1,5 @@
 #!/bin/bash
 
-registry_url="${REGISTRY_URL}"
-
 image_name="${REGISTRY_URL}/pipe-timer-backend"
 image_tag="${ENV}"
 path="${PATH}"
