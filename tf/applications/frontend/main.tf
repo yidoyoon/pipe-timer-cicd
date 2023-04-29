@@ -72,7 +72,7 @@ data "terraform_remote_state" "network" {
 
 resource "aws_security_group" "sg_pipe_timer_frontend" {
   name   = "sg_pipe_timer_frontend"
-  vpc_id = data.terraform_remote_state.backend.outputs.vpc_id
+  vpc_id = data.terraform_remote_state.network.outputs.vpc_id
 
   # SSH access from the VPC
   ingress {
@@ -98,24 +98,20 @@ resource "aws_security_group" "sg_pipe_timer_frontend" {
 }
 
 data "template_file" "user_data" {
-  template = file("${path.module}/../../scripts/add-ssh-web-app.yaml")
-}
-
-data "terraform_remote_state" "backend" {
-  backend = "local"
-
-  config = {
-    path = "../backend/terraform.tfstate"
-  }
+  template = file("../../scripts/add-ssh-web-app.yaml")
 }
 
 resource "aws_instance" "pipe-timer-frontend" {
   ami                         = data.aws_ami.ubuntu.id
   instance_type               = "t2.micro"
-  subnet_id                   = data.terraform_remote_state.backend.outputs.subnet_1
+  subnet_id                   = data.terraform_remote_state.network.outputs.public_subnet_1_id
   vpc_security_group_ids      = [aws_security_group.sg_pipe_timer_frontend.id]
   associate_public_ip_address = true
   user_data                   = data.template_file.user_data.rendered
+
+  lifecycle {
+    create_before_destroy = true
+  }
 
   root_block_device {
     volume_size = 15
@@ -137,28 +133,32 @@ resource "aws_instance" "pipe-timer-frontend" {
   }
 
   provisioner "file" {
+    source      = "./certs"
+    destination = var.cicd_path
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/../common-scripts"
+    destination = var.cicd_path
+  }
+
+  provisioner "file" {
     source      = "${path.module}/shell-scripts"
     destination = var.cicd_path
   }
 
   provisioner "file" {
-    source      = "${path.module}/../../../certs"
-    destination = var.cicd_path
-  }
-
-
-  provisioner "file" {
-    source      = "${path.module}/../../../../pipe-timer-front/templates/nginx.conf"
+    source      = "${path.module}/../../../../pipe-timer-frontend/templates/nginx.conf"
     destination = "${var.cicd_path}/nginx.conf"
   }
 
   provisioner "file" {
-    source      = "${path.module}/../../../../pipe-timer-front/env"
+    source      = "${path.module}/../../../../pipe-timer-frontend/env"
     destination = "${var.cicd_path}/env"
   }
 
   provisioner "file" {
-    source      = "${path.module}/../../../../pipe-timer-front/public"
+    source      = "${path.module}/../../../../pipe-timer-frontend/public"
     destination = "${var.cicd_path}/public"
   }
 
@@ -207,5 +207,3 @@ resource "cloudflare_record" "root_pipetimer_com" {
   type    = "A"
   proxied = true
 }
-
-
