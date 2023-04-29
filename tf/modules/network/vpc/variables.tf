@@ -1,3 +1,7 @@
+variable "region" {
+  description = "The region terraform deploys instance"
+}
+
 variable "cidr_vpc" {
   description = "CIDR block for the VPC"
   default     = "172.31.0.0/16"
