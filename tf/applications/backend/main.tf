@@ -194,6 +194,5 @@ resource "cloudflare_record" "api_pipetimer_com" {
   name    = "api.pipetimer.com"
   value   = aws_instance.pipe-timer-backend.public_ip
   type    = "A"
-  proxied = true
-
+  proxied = false
 }
