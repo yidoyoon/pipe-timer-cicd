@@ -58,6 +58,14 @@ data "aws_ami" "ubuntu" {
   }
 }
 
+data "terraform_remote_state" "network" {
+  backend = "local"
+
+  config = {
+    path = "../../modules/network/vpc/terraform.tfstate"
+  }
+}
+
 resource "aws_security_group" "sg_pipe_timer_frontend" {
   name   = "sg_pipe_timer_frontend"
   vpc_id = data.terraform_remote_state.backend.outputs.vpc_id
