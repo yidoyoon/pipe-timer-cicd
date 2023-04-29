@@ -194,7 +194,7 @@ resource "aws_instance" "pipe-timer-frontend" {
 # Add frontend record to DNS
 resource "cloudflare_record" "pipetimer_com" {
   zone_id = var.cf_zone_id
-  name    = "*.pipetimer.com"
+  name    = "www.pipetimer.com"
   value   = aws_instance.pipe-timer-frontend.public_ip
   type    = "A"
   proxied = true
