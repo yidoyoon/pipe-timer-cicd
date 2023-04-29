@@ -21,6 +21,15 @@ provider "aws" {
   region = var.region
 }
 
+resource "null_resource" "remove_docker" {
+  provisioner "local-exec" {
+    command     = "../docker-scripts/remove-images.sh"
+    working_dir = path.module
+    interpreter = ["/bin/bash", "-c"]
+    on_failure = fail
+  }
+}
+
 ## Build
 resource "null_resource" "build-docker" {
   provisioner "local-exec" {
