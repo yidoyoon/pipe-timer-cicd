@@ -42,7 +42,7 @@ resource "null_resource" "build-docker" {
     command = templatefile("./shell-scripts/build-push-registry.sh", {
       "REGISTRY_URL" = var.registry_url
       "ENV"          = "staging"
-      "PATH"         = "../../../../pipe-timer-front"
+      "PATH"         = "../../../../pipe-timer-frontend"
       "FRONT_URL"    = "pipetimer.com"
     })
     working_dir = path.module
