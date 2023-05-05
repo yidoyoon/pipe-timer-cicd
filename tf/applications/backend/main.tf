@@ -23,17 +23,16 @@ provider "aws" {
 
 resource "null_resource" "remove_docker" {
   provisioner "local-exec" {
-    command     = "../docker-scripts/remove-images.sh"
+    command     = "../common-scripts/remove-images.sh"
     working_dir = path.module
     interpreter = ["/bin/bash", "-c"]
-    on_failure = fail
   }
 }
 
 ## Build
 resource "null_resource" "build-docker" {
   provisioner "local-exec" {
-    command     = "./shell-scripts/login-docker-registry.sh ${var.registry_url} ${var.registry_id} ${var.registry_password}"
+    command     = "../common-scripts/login-docker-registry.sh ${var.registry_url} ${var.registry_id} ${var.registry_password}"
     working_dir = path.module
     interpreter = ["/bin/bash", "-c"]
   }
@@ -145,12 +144,12 @@ resource "aws_instance" "pipe-timer-backend" {
   }
 
   provisioner "file" {
-    source      = "${path.module}/../common-scripts"
-    destination = var.cicd_path
+    source      = "../common-scripts"
+    destination = "${var.cicd_path}/shell-scripts/"
   }
 
   provisioner "file" {
-    source      = "${path.module}/shell-scripts"
+    source      = "./shell-scripts"
     destination = var.cicd_path
   }
 
