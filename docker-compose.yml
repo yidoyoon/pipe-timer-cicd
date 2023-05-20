@@ -1,0 +1,41 @@
+version: '3'
+
+networks:
+  app-tier:
+    driver: bridge
+
+services:
+  nginx-for-registry:
+    image: nginx:latest
+    container_name: nginx-for-registry
+    env_file:
+      - ./env/.env
+    environment:
+      DOMAIN: ${REGISTRY_DOMAIN}
+    ports:
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./certs:/etc/nginx/certs
+    networks:
+      - app-tier
+
+  registry:
+    image: registry:2
+    container_name: registry
+    env_file:
+      - ./env/.env
+    environment:
+      REGISTRY_AUTH: htpasswd
+      REGISTRY_AUTH_HTPASSWD_REALM: Registry Realm
+      REGISTRY_AUTH_HTPASSWD_PATH: /auth/htpasswd
+      REGISTRY_HTTP_TLS_CERTIFICATE: /certs/cert.pem
+      REGISTRY_HTTP_TLS_KEY: /certs/key.pem
+      REGISTRY_STORAGE_DELETE_ENABLED: true
+    ports:
+      - ${REGISTRY_PORT}:${REGISTRY_PORT}
+    networks:
+      - app-tier
+    volumes:
+      - ./registry/auth:/auth
+      - ./certs:/certs
