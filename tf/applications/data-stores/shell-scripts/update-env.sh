@@ -1,6 +1,6 @@
 #!/bin/bash
 
-sed -i s/^DATABASE_HOST=.*/DATABASE_HOST="${MYSQL_HOST}"/ "${ENV_PATH}"/."${ENV}".env
-sed -i s/^DATABASE_NAME=.*/DATABASE_NAME="${MYSQL_DB_NAME}"/ "${ENV_PATH}"/."${ENV}".env
-sed -i s/^DATABASE_USERNAME=.*/DATABASE_USERNAME="${MYSQL_USERNAME}"/ "${ENV_PATH}"/."${ENV}".env
-sed -i s/^DATABASE_PASSWORD=.*/DATABASE_PASSWORD="${MYSQL_PASSWORD}"/ "${ENV_PATH}"/."${ENV}".env
+sed -i s/^DB_BASE_URL=.*/DB_BASE_URL="${MYSQL_HOST}"/ "${ENV_PATH}"/."${ENV}".env
+sed -i s/^DB_NAME=.*/DB_NAME="${MYSQL_DB_NAME}"/ "${ENV_PATH}"/."${ENV}".env
+sed -i s/^DB_USERNAME=.*/DB_USERNAME="${MYSQL_USERNAME}"/ "${ENV_PATH}"/."${ENV}".env
+sed -i s/^DB_PASSWORD=.*/DB_PASSWORD="${MYSQL_PASSWORD}"/ "${ENV_PATH}"/."${ENV}".env
