@@ -19,6 +19,7 @@ services:
       - ./certs:/etc/nginx/certs
     networks:
       - app-tier
+    restart: on-failure
 
   registry:
     image: registry:2
@@ -39,3 +40,4 @@ services:
     volumes:
       - ./registry/auth:/auth
       - ./certs:/certs
+    restart: on-failure

@@ -11,6 +11,6 @@ docker run -itd \
   -e NODE_ENV="$env" \
   --env-file "$cicd_path"/env/."$env".env \
   -v "$cicd_path"/certs:/certs/:ro \
-  "$registry_url"/pipe-timer-backend:"$env" \
-  --name backend
+  --name backend \
+  "$registry_url"/pipe-timer-backend:"$env"
 docker ps -a
