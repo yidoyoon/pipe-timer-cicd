@@ -111,7 +111,7 @@ resource "aws_elasticache_parameter_group" "notify" {
 
   parameter {
     name  = "notify-keyspace-events"
-    value = "AKE"
+    value = "Ex"
   }
 }
 
