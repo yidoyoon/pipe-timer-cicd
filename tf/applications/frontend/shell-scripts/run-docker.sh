@@ -12,7 +12,8 @@ docker run -itd \
   -v "$cicd_path"/certs:/etc/nginx/certs/:ro \
   -v "$cicd_path"/nginx.conf:/etc/nginx/nginx.conf \
   -v "$cicd_path"/public:/public:ro \
-  "$registry_url"/pipe-timer-frontend:"$env" \
+  --name frontend \
   --restart=always \
-  --name frontend
+  "$registry_url"/pipe-timer-frontend:"$env"
+
 docker ps -a
