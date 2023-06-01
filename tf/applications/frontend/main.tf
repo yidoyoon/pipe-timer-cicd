@@ -181,7 +181,7 @@ resource "aws_instance" "pipe-timer-frontend" {
 
   provisioner "remote-exec" {
     inline = [
-      "${var.cicd_path}/shell-scripts/run-docker.sh ${var.registry_url} ${var.cicd_path} ${var.env}",
+      "${var.cicd_path}/shell-scripts/run-docker.sh ${var.registry_url} ${var.cicd_path} ${var.env} ${var.host_url} ${var.upstream_backend}",
     ]
   }
 

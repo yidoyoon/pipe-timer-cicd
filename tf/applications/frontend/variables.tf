@@ -51,3 +51,13 @@ variable "cf_token" {
   description = "The cloudflare api token"
   type        = string
 }
+
+variable "host_url" {
+  description = "The host base url"
+  type        = string
+}
+
+variable "upstream_backend" {
+  description = "The upstream backend"
+  type        = string
+}
